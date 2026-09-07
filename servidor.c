@@ -13,7 +13,7 @@ int main() {
     char buffer[BUFFER_SIZE];
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_addr_len;
-    const char * const welcome_reponse = "Hello UDP server";
+    char const * const welcome_reponse = "Hello UDP server";
 
     server_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (server_fd < 0) {
