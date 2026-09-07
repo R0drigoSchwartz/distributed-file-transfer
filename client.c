@@ -22,7 +22,7 @@ int main() {
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(PORT);
-    server_addr.sin_addr.s_addr = inet_add("127.0.0.1");
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     sendto(client_fd, message, strlen(message), MSG_CONFIRM, (struct sockaddr *)&server_addr, sizeof(server_addr));
     printf("Message sent to server.\n");
