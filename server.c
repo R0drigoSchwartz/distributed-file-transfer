@@ -6,7 +6,7 @@
 #include <stdbool.h>
 
 #define PORT 6000
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 32 * 1024
 
 
 int main() {
@@ -35,13 +35,24 @@ int main() {
 
     printf("Server is listening on port %d\n", PORT);
 
+    FILE *file_ptr = fopen("file_transfered.txt", "wb");
+    if (file_ptr == NULL) {
+        perror("File creation failed");
+        exit(EXIT_FAILURE);
+    }
+
     client_addr_len = sizeof(client_addr);
     while (true) {
         int nbytes = recvfrom(server_fd, &buffer, BUFFER_SIZE, 0, (struct sockaddr*)&client_addr, &client_addr_len);
-        buffer[nbytes] = '\0';
+        if (nbytes < 0) {
+            continue;
+        }
+
         printf("Received: %s\n", buffer);
+        fwrite(buffer, 1, BUFFER_SIZE - 1, file_ptr); // \0 no BUFFER_SIZE?
     }
 
     close(server_fd);
+    fclose(file_ptr);
     return 0;
 }
