@@ -4,6 +4,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <stdbool.h>
 
 #define PORT 6000
 #define BUFFER_SIZE 32 * 1024
@@ -36,11 +37,19 @@ int main(int argc, char *argv[]) {
     server_addr.sin_port = htons(PORT);
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE - 1, file_ptr)) > 0) {
+    while (true) {
+        if ((bytes_read = fread(buffer, 1, BUFFER_SIZE - 1, file_ptr)) <= 0) {
+            if (feof(file_ptr)) {
+                break;
+            }
+            continue;
+        }
         buffer[BUFFER_SIZE - 1] = '\0';
         sendto(client_fd, buffer, strlen(buffer), MSG_CONFIRM, (struct sockaddr *)&server_addr, sizeof(server_addr));
+        sleep(3);
     }
 
     close(client_fd);
+    fclose(file_ptr);
     return 0;
 }
