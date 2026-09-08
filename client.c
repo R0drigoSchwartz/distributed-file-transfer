@@ -37,6 +37,7 @@ int main(int argc, char *argv[]) {
     server_addr.sin_port = htons(PORT);
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
+    char ack = 0;
     while (true) {
         if ((bytes_read = fread(buffer, 1, BUFFER_SIZE - 1, file_ptr)) <= 0) {
             if (feof(file_ptr)) {
@@ -44,9 +45,14 @@ int main(int argc, char *argv[]) {
             }
             continue;
         }
-        buffer[BUFFER_SIZE - 1] = '\0';
-        sendto(client_fd, buffer, strlen(buffer), MSG_CONFIRM, (struct sockaddr *)&server_addr, sizeof(server_addr));
-        sleep(3);
+        sendto(client_fd, buffer, bytes_read, MSG_CONFIRM, (struct sockaddr *)&server_addr, sizeof(server_addr));
+        ack = 0;
+        socklen_t server_addr_len = sizeof(server_addr);
+        int n = recvfrom(client_fd, &ack, 1, MSG_WAITALL, (struct sockaddr*)&server_addr, &server_addr_len);
+        if (ack == 0) {
+            perror("Did not receive ack equal to 1");
+            break;
+        }
     }
 
     close(client_fd);

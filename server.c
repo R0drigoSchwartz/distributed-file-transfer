@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -41,15 +42,20 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
+    char ack = 1;
     client_addr_len = sizeof(client_addr);
     while (true) {
         int nbytes = recvfrom(server_fd, &buffer, BUFFER_SIZE, 0, (struct sockaddr*)&client_addr, &client_addr_len);
         if (nbytes < 0) {
             continue;
         }
-
-        printf("Received: %s\n", buffer);
-        fwrite(buffer, 1, BUFFER_SIZE - 1, file_ptr); // \0 no BUFFER_SIZE?
+        // printf("Received: %s\n", buffer);
+        fwrite(buffer, 1, nbytes, file_ptr);
+        if (fflush(file_ptr)) {
+            perror("fflush did no work on server");
+            break;
+        }
+        sendto(server_fd, &ack, strlen(&ack), MSG_CONFIRM, (const struct sockaddr*)&client_addr, client_addr_len);
     }
 
     close(server_fd);
