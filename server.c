@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,20 +42,27 @@ int main() {
     Datagram datagram;
     char ack = 1;
     client_addr_len = sizeof(client_addr);
-    int k = 0;
     while (true) {
-        int nbytes = recvfrom(server_fd, &datagram, BUFFER_SIZE, 0, (struct sockaddr*)&client_addr, &client_addr_len);
+        int nbytes = recvfrom(server_fd, &datagram, sizeof(datagram), 0, (struct sockaddr*)&client_addr, &client_addr_len);
+        
         if (nbytes < 0) {
             continue;
         }
-        printf("Received: %d - %d", nbytes, k++);
-        fflush(stdout);
-        fwrite(datagram.data, 1, nbytes, file_ptr);
+        
+        if ((size_t)nbytes < sizeof(datagram.header)) {
+            fprintf(stderr, "Datagram smaller than header\n");
+            continue;
+        }
+        
+        size_t data_size = (size_t)nbytes - sizeof(datagram.header);
+        fwrite(datagram.data, 1, data_size, file_ptr);
+        
         if (fflush(file_ptr)) {
             perror("fflush did no work on server");
             break;
         }
-        sendto(server_fd, &ack, strlen(&ack), MSG_CONFIRM, (const struct sockaddr*)&client_addr, client_addr_len);
+        
+        sendto(server_fd, &ack, sizeof(ack), MSG_CONFIRM, (const struct sockaddr*)&client_addr, client_addr_len);
     }
 
     close(server_fd);

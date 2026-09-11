@@ -1,10 +1,12 @@
 #ifndef DEFS_H
 #define DEFS_H
 
+#include <stddef.h>
 #define PORT 6000
 #define FILENAME_SIZE 256
 #define HEADER_SIZE FILENAME_SIZE
 #define BUFFER_SIZE (32 * 1024 - HEADER_SIZE)
+#define DATAGRAM_SIZE 32 * 1024
 
 typedef struct {
     char filename[FILENAME_SIZE];
