@@ -6,16 +6,14 @@
 #include <sys/socket.h>
 #include <stdbool.h>
 
-#define PORT 6000
-#define BUFFER_SIZE 32 * 1024
+#include "defs.h"
+#include "utils.h"
 
 
 int main() {
     int server_fd;
-    char buffer[BUFFER_SIZE];
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_addr_len;
-    char const * const welcome_reponse = "Hello UDP server";
 
     server_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (server_fd < 0) {
@@ -23,9 +21,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(PORT);
+    configure_sockaddr(&server_addr, INADDR_ANY, PORT);
 
     int res = bind(server_fd, (const struct sockaddr*) &server_addr, sizeof(server_addr));
     if (res < 0) {
@@ -42,15 +38,18 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
+    Datagram datagram;
     char ack = 1;
     client_addr_len = sizeof(client_addr);
+    int k = 0;
     while (true) {
-        int nbytes = recvfrom(server_fd, &buffer, BUFFER_SIZE, 0, (struct sockaddr*)&client_addr, &client_addr_len);
+        int nbytes = recvfrom(server_fd, &datagram, BUFFER_SIZE, 0, (struct sockaddr*)&client_addr, &client_addr_len);
         if (nbytes < 0) {
             continue;
         }
-        // printf("Received: %s\n", buffer);
-        fwrite(buffer, 1, nbytes, file_ptr);
+        printf("Received: %d - %d", nbytes, k++);
+        fflush(stdout);
+        fwrite(datagram.data, 1, nbytes, file_ptr);
         if (fflush(file_ptr)) {
             perror("fflush did no work on server");
             break;
