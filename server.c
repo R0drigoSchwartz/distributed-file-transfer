@@ -6,15 +6,17 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 #include "defs.h"
 #include "utils.h"
 
 
+void * receive_file(void* args);
+
 int main() {
     int server_fd;
-    struct sockaddr_in server_addr, client_addr;
-    socklen_t client_addr_len;
+    struct sockaddr_in server_addr;
 
     server_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (server_fd < 0) {
@@ -33,17 +35,33 @@ int main() {
 
     printf("Server is listening on port %d\n", PORT);
 
-    FILE *file_ptr = fopen("file_transfered.txt", "wb");
-    if (file_ptr == NULL) {
-        perror("File creation failed");
-        exit(EXIT_FAILURE);
+    pthread_t threads[THREAD_COUNT];
+    for (int i = 0; i < THREAD_COUNT; i++) {
+        pthread_create(&threads[i], NULL, receive_file, (void*) &server_fd);
     }
+
+    for (int i = 0; i < THREAD_COUNT; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    close(server_fd);
+    return 0;
+}
+
+void * receive_file(void* args) {
+    int * server_fd = (int *) args;
+ 
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len;
 
     Datagram datagram;
     char ack = 1;
     client_addr_len = sizeof(client_addr);
-    while (true) {
-        int nbytes = recvfrom(server_fd, &datagram, sizeof(datagram), 0, (struct sockaddr*)&client_addr, &client_addr_len);
+
+   while (true) {
+        int nbytes = recvfrom(*server_fd, &datagram, sizeof(datagram), 0, (struct sockaddr*)&client_addr, &client_addr_len);
+
+        printf("olaaaaaaaaaaa");
         
         if (nbytes < 0) {
             continue;
@@ -53,6 +71,15 @@ int main() {
             fprintf(stderr, "Datagram smaller than header\n");
             continue;
         }
+
+        char output_path[PATH_SIZE];
+        snprintf(output_path, sizeof(output_path), "%s/%s", OUTPUT_DIR, datagram.header.filename);
+
+        FILE *file_ptr = fopen(output_path, "ab");
+        if (file_ptr == NULL) {
+            perror("File creation failed");
+            exit(EXIT_FAILURE);
+        }
         
         size_t data_size = (size_t)nbytes - sizeof(datagram.header);
         fwrite(datagram.data, 1, data_size, file_ptr);
@@ -61,11 +88,10 @@ int main() {
             perror("fflush did no work on server");
             break;
         }
+        fclose(file_ptr);
         
-        sendto(server_fd, &ack, sizeof(ack), MSG_CONFIRM, (const struct sockaddr*)&client_addr, client_addr_len);
+        sendto(*server_fd, &ack, sizeof(ack), MSG_CONFIRM, (const struct sockaddr*)&client_addr, client_addr_len);
     }
 
-    close(server_fd);
-    fclose(file_ptr);
-    return 0;
+    return NULL;
 }
