@@ -2,24 +2,48 @@
 #define DEFS_H
 
 #include <stddef.h>
+#include <openssl/md5.h>
+
 #define PORT 6000
 #define OUTPUT_DIR "resultados"
-#define FILENAME_SIZE 256
-#define PATH_SIZE (sizeof(OUTPUT_DIR) + FILENAME_SIZE + 1)
-#define HEADER_SIZE FILENAME_SIZE
-#define BUFFER_SIZE (32 * 1024 - HEADER_SIZE)
-#define DATAGRAM_SIZE 32 * 1024
+#define FILE_NAME_SIZE 256
+#define PATH_SIZE (sizeof(OUTPUT_DIR) + FILE_NAME_SIZE + 1)
+#define DATAGRAM_SIZE (32 * 1024)
+#define BUFFER_SIZE (DATAGRAM_SIZE - sizeof(DatagramHeader))
+#define HASH_SIZE MD5_DIGEST_LENGTH
 #define THREAD_COUNT 10
 
+
+typedef enum {
+    GETINFO,
+    UPLOAD
+} MessageType;
+
+typedef enum {
+    NOT_EXISTS,
+    INCOMPLETE,
+    COMPLETE
+} FileStatus;
+
 typedef struct {
-    char filename[FILENAME_SIZE];
+    MessageType message_type;
+    char file_name[FILE_NAME_SIZE];
+    unsigned char file_hash[HASH_SIZE];
+    long file_size;
 } DatagramHeader;
 
-typedef struct Datagram {
+typedef struct {
     DatagramHeader header;
     char data[BUFFER_SIZE];
 } Datagram;
 
-Datagram* init_datagram(const char *);
+typedef struct {
+    char acknowledge;
+} ServerAck;
+
+typedef struct {
+    FileStatus file_status;
+    int file_offset;
+} ServerAnswer;
 
 #endif

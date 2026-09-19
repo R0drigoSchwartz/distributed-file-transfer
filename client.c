@@ -12,6 +12,7 @@
 
 
 static int send_file(int, const struct sockaddr_in *, FILE *, Datagram *);
+static int send_initial_message(int client_fd, const struct sockaddr_in *server_addr, Datagram *datagram, ServerAnswer *server_answe);
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -19,9 +20,10 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    FILE *file_ptr = fopen(argv[1], "rb");
+    char *file_name = argv[1];
+    FILE *file_ptr = fopen(file_name, "rb");
     if (file_ptr == NULL) {
-        perror("File open failed");
+        perror("File open failed");;
         exit(EXIT_FAILURE);
     }
 
@@ -36,19 +38,46 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    // datagram header initialization
-    Datagram *datagram = init_datagram(argv[1]);
-    if (datagram == NULL) {
-        fclose(file_ptr);
+    long file_size = get_file_size(file_name);
+    unsigned char *file_hash = hash_file(file_name);
+    if (file_size < 0 || file_hash == NULL) {
+        fprintf(stderr, "Failed to read file info\n");
         close(client_fd);
-        fprintf(stderr, "Failed to initialize datagram\n");
+        fclose(file_ptr);
+        free(file_hash);
         exit(EXIT_FAILURE);
     }
 
-    int result = send_file(client_fd, &server_addr, file_ptr, datagram);
+    // datagram header initialization
+    Datagram *datagram = init_datagram(file_name, GETINFO, file_size, file_hash);
+    if (datagram == NULL) {
+        fprintf(stderr, "Failed to initialize datagram\n");
+        close(client_fd);
+        fclose(file_ptr);
+        free(file_hash);
+        exit(EXIT_FAILURE);
+    }
+
+    ServerAnswer server_answer;
+    int exit_status = send_initial_message(client_fd, &server_addr, datagram, &server_answer);
+    if (exit_status == EXIT_FAILURE) {
+        close(client_fd);
+        fclose(file_ptr);
+        free(file_hash);
+        free(datagram);
+        exit(EXIT_FAILURE);
+    }
+
+    int result = EXIT_SUCCESS;
+    switch (server_answer.file_status) {
+        case NOT_EXISTS:
+            result = send_file(client_fd, &server_addr, file_ptr, datagram);
+            break;
+    }
 
     close(client_fd);
     fclose(file_ptr);
+    free(file_hash);
     free(datagram);
 
     printf("Program finished with success\n");
@@ -58,7 +87,7 @@ int main(int argc, char *argv[]) {
 
 static int send_file(int client_fd, const struct sockaddr_in *server_addr, FILE *file_ptr, Datagram *datagram) {
     socklen_t server_addr_len = sizeof(*server_addr);
-    char ack = 0;
+    ServerAck server_ack;
 
     // Send datagrams
     while (true) {
@@ -71,6 +100,8 @@ static int send_file(int client_fd, const struct sockaddr_in *server_addr, FILE 
             break;
         }
 
+        datagram->header.message_type = UPLOAD;
+
         ssize_t n_send = sendto(client_fd, datagram, sizeof(datagram->header) + bytes_read, MSG_CONFIRM, (const struct sockaddr *)server_addr, server_addr_len);
         if (n_send < 0) {
             perror("sendto failed");
@@ -81,8 +112,7 @@ static int send_file(int client_fd, const struct sockaddr_in *server_addr, FILE 
         struct sockaddr_in peer_addr;
         socklen_t peer_addr_len = sizeof(peer_addr);
         // wait for ack
-        ack = 0;
-        ssize_t n_rec = recvfrom(client_fd, &ack, 1, MSG_WAITALL, (struct sockaddr*)&(peer_addr), &peer_addr_len);
+        ssize_t n_rec = recvfrom(client_fd, &server_ack, 1, MSG_WAITALL, (struct sockaddr*)&(peer_addr), &peer_addr_len);
 
         // Check for receive errors and verify that a valid ACK came from the expected server.
         if (n_rec < 0) {
@@ -90,7 +120,7 @@ static int send_file(int client_fd, const struct sockaddr_in *server_addr, FILE 
             return EXIT_FAILURE;
         }
         if (n_rec != 1 ||
-            ack != 1 ||
+            server_ack.acknowledge != '1' ||
             peer_addr.sin_family != AF_INET ||
             peer_addr.sin_addr.s_addr != server_addr->sin_addr.s_addr ||
             peer_addr.sin_port != server_addr->sin_port) {
@@ -100,3 +130,34 @@ static int send_file(int client_fd, const struct sockaddr_in *server_addr, FILE 
     }
     return EXIT_SUCCESS;
 }
+
+static int send_initial_message(int client_fd, const struct sockaddr_in *server_addr, Datagram *datagram, ServerAnswer *server_answer) {
+    socklen_t server_addr_len = sizeof(*server_addr);
+
+    ssize_t n_send = sendto(client_fd, datagram, sizeof(datagram->header), MSG_CONFIRM, (const struct sockaddr *)server_addr, server_addr_len);
+    if (n_send < 0) {
+        perror("sendto failed");
+        return EXIT_FAILURE;
+    }
+
+    struct sockaddr_in peer_addr;
+    socklen_t peer_addr_len = sizeof(peer_addr);
+    // wait for the server answer
+    ssize_t n_rec = recvfrom(client_fd, server_answer, sizeof(*server_answer), MSG_WAITALL, (struct sockaddr*)&(peer_addr), &peer_addr_len);
+
+    // Check for receive errors and verify that a valid server answer came from the expected server.
+    if (n_rec < 0) {
+        perror("recvfrom failed");
+        return EXIT_FAILURE;
+    }
+    if (n_rec != sizeof(*server_answer) ||
+        peer_addr.sin_family != AF_INET ||
+        peer_addr.sin_addr.s_addr != server_addr->sin_addr.s_addr ||
+        peer_addr.sin_port != server_addr->sin_port) {
+        fprintf(stderr, "Invalid answer or unexpected sender\n");
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+

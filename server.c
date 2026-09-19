@@ -55,13 +55,11 @@ void * receive_file(void* args) {
     socklen_t client_addr_len;
 
     Datagram datagram;
-    char ack = 1;
+    ServerAck ack = {'1'};
     client_addr_len = sizeof(client_addr);
 
    while (true) {
         int nbytes = recvfrom(*server_fd, &datagram, sizeof(datagram), 0, (struct sockaddr*)&client_addr, &client_addr_len);
-
-        printf("olaaaaaaaaaaa");
         
         if (nbytes < 0) {
             continue;
@@ -73,7 +71,7 @@ void * receive_file(void* args) {
         }
 
         char output_path[PATH_SIZE];
-        snprintf(output_path, sizeof(output_path), "%s/%s", OUTPUT_DIR, datagram.header.filename);
+        snprintf(output_path, sizeof(output_path), "%s/%s", OUTPUT_DIR, datagram.header.file_name);
 
         FILE *file_ptr = fopen(output_path, "ab");
         if (file_ptr == NULL) {
