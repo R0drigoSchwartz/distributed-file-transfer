@@ -43,7 +43,7 @@ typedef struct {
 
 typedef struct {
     FileStatus file_status;
-    int file_offset;
+    long file_offset;
 } ServerAnswer;
 
 #endif

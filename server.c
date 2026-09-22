@@ -104,8 +104,37 @@ void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr
 }
 
 void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len) {
-    ServerAnswer server_answer;
-    server_answer.file_status = NOT_EXISTS;
+    ServerAnswer server_answer = {0};
+
+    char file_name[PATH_SIZE];
+    snprintf(file_name, sizeof(file_name), "%s/%s", OUTPUT_DIR, datagram->header.file_name);
+  
+    long file_size = get_file_size(file_name);
+
+    if (file_size == -1) {
+        // File doesn't exists!
+        server_answer.file_status = NOT_EXISTS;
+    } else if (file_size < datagram->header.file_size) {
+        server_answer.file_status = INCOMPLETE;
+        server_answer.file_offset = file_size;
+    } else if (file_size > datagram->header.file_size) {
+        // File is broken (delete it and ask to send it again?)
+        // TO DO: delete file?
+        server_answer.file_status = NOT_EXISTS; 
+    } else {
+        unsigned char *file_hash = hash_file(file_name);
+
+        if (file_hash != NULL && memcmp(file_hash, datagram->header.file_hash, HASH_SIZE) == 0) {
+            // File is complete
+            server_answer.file_status = COMPLETE;
+        } else {
+            // File is broken (delete it and ask to send it again?)
+            // TO DO: delete file?
+            server_answer.file_status = NOT_EXISTS;
+        }
+
+        free(file_hash);
+    }
 
     sendto(server_fd, &server_answer, sizeof(server_answer), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
 }

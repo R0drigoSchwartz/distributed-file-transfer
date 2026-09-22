@@ -73,6 +73,8 @@ int main(int argc, char *argv[]) {
         case NOT_EXISTS:
             result = send_file(client_fd, &server_addr, file_ptr, datagram);
             break;
+        case COMPLETE:
+            break;
     }
 
     close(client_fd);
