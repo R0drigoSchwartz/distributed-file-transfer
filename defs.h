@@ -12,6 +12,7 @@
 #define BUFFER_SIZE (DATAGRAM_SIZE - sizeof(DatagramHeader))
 #define HASH_SIZE MD5_DIGEST_LENGTH
 #define THREAD_COUNT 10
+#define SOCKETERROR (-1)
 
 
 typedef enum {

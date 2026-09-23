@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <stdbool.h>
+#include <errno.h>
 
 #include "utils.h"
 #include "defs.h"
@@ -37,6 +38,11 @@ int main(int argc, char *argv[]) {
         fclose(file_ptr);
         exit(EXIT_FAILURE);
     }
+
+    struct timeval timeout;
+    timeout.tv_sec = 2;
+    timeout.tv_usec = 0;
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
     long file_size = get_file_size(file_name);
     unsigned char *file_hash = hash_file(file_name);
@@ -71,9 +77,16 @@ int main(int argc, char *argv[]) {
     int result = EXIT_SUCCESS;
     switch (server_answer.file_status) {
         case NOT_EXISTS:
+            printf("File not exists on the server! \n");
+            result = send_file(client_fd, &server_addr, file_ptr, datagram);
+            break;
+        case INCOMPLETE:
+            printf("File isn't complete on the server! \n");
+            fseek(file_ptr, server_answer.file_offset, SEEK_SET);
             result = send_file(client_fd, &server_addr, file_ptr, datagram);
             break;
         case COMPLETE:
+            printf("File is complete on the server! \n");
             break;
     }
 
@@ -114,14 +127,21 @@ static int send_file(int client_fd, const struct sockaddr_in *server_addr, FILE 
         struct sockaddr_in peer_addr;
         socklen_t peer_addr_len = sizeof(peer_addr);
         // wait for ack
-        ssize_t n_rec = recvfrom(client_fd, &server_ack, 1, MSG_WAITALL, (struct sockaddr*)&(peer_addr), &peer_addr_len);
+        ssize_t bytes_received = recvfrom(client_fd, &server_ack, 1, MSG_WAITALL, (struct sockaddr*)&(peer_addr), &peer_addr_len);
 
+        if (bytes_received == SOCKETERROR && errno == EWOULDBLOCK) {
+            // Socket timeout
+            fseek(file_ptr, -(long)bytes_read, SEEK_CUR);
+            continue;
+        } 
+        
         // Check for receive errors and verify that a valid ACK came from the expected server.
-        if (n_rec < 0) {
+        if (bytes_received < 0) {
             perror("recvfrom failed");
             return EXIT_FAILURE;
         }
-        if (n_rec != 1 ||
+        
+        if (bytes_received != 1 ||
             server_ack.acknowledge != '1' ||
             peer_addr.sin_family != AF_INET ||
             peer_addr.sin_addr.s_addr != server_addr->sin_addr.s_addr ||
@@ -130,6 +150,7 @@ static int send_file(int client_fd, const struct sockaddr_in *server_addr, FILE 
             return EXIT_FAILURE;
         }
     }
+
     return EXIT_SUCCESS;
 }
 
