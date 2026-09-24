@@ -23,7 +23,8 @@ typedef enum {
 typedef enum {
     NOT_EXISTS,
     INCOMPLETE,
-    COMPLETE
+    COMPLETE,
+    CORRUPTED
 } FileStatus;
 
 typedef struct {
@@ -31,6 +32,7 @@ typedef struct {
     char file_name[FILE_NAME_SIZE];
     unsigned char file_hash[HASH_SIZE];
     long file_size;
+    long current_seek;
 } DatagramHeader;
 
 typedef struct {

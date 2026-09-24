@@ -40,7 +40,7 @@ int main(int argc, char *argv[]) {
     }
 
     struct timeval timeout;
-    timeout.tv_sec = 2;
+    timeout.tv_sec = 15;
     timeout.tv_usec = 0;
     setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
@@ -74,6 +74,10 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    timeout.tv_sec = 2;
+    timeout.tv_usec = 0;
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
     int result = EXIT_SUCCESS;
     switch (server_answer.file_status) {
         case NOT_EXISTS:
@@ -84,6 +88,9 @@ int main(int argc, char *argv[]) {
             printf("File isn't complete on the server! \n");
             fseek(file_ptr, server_answer.file_offset, SEEK_SET);
             result = send_file(client_fd, &server_addr, file_ptr, datagram);
+            break;
+        case CORRUPTED:
+            printf("File corrupted on the server. It was deleted! \n");
             break;
         case COMPLETE:
             printf("File is complete on the server! \n");
@@ -106,6 +113,7 @@ static int send_file(int client_fd, const struct sockaddr_in *server_addr, FILE 
 
     // Send datagrams
     while (true) {
+        datagram->header.current_seek = ftell(file_ptr);
         size_t bytes_read = fread(datagram->data, 1, sizeof(datagram->data), file_ptr);
         if (ferror(file_ptr)) {
             fprintf(stderr, "Failed to read input file\n");
@@ -133,14 +141,14 @@ static int send_file(int client_fd, const struct sockaddr_in *server_addr, FILE 
             // Socket timeout
             fseek(file_ptr, -(long)bytes_read, SEEK_CUR);
             continue;
-        } 
-        
+        }
+
         // Check for receive errors and verify that a valid ACK came from the expected server.
         if (bytes_received < 0) {
             perror("recvfrom failed");
             return EXIT_FAILURE;
         }
-        
+
         if (bytes_received != 1 ||
             server_ack.acknowledge != '1' ||
             peer_addr.sin_family != AF_INET ||
@@ -166,14 +174,20 @@ static int send_initial_message(int client_fd, const struct sockaddr_in *server_
     struct sockaddr_in peer_addr;
     socklen_t peer_addr_len = sizeof(peer_addr);
     // wait for the server answer
-    ssize_t n_rec = recvfrom(client_fd, server_answer, sizeof(*server_answer), MSG_WAITALL, (struct sockaddr*)&(peer_addr), &peer_addr_len);
+    ssize_t bytes_received = recvfrom(client_fd, server_answer, sizeof(*server_answer), MSG_WAITALL, (struct sockaddr*)&(peer_addr), &peer_addr_len);
+
+    if (bytes_received == SOCKETERROR && errno == EWOULDBLOCK) {
+        // Socket timeout
+        printf("Recvfrom timeout waiting for the initial ack.");
+        return EXIT_FAILURE;
+    }
 
     // Check for receive errors and verify that a valid server answer came from the expected server.
-    if (n_rec < 0) {
+    if (bytes_received < 0) {
         perror("recvfrom failed");
         return EXIT_FAILURE;
     }
-    if (n_rec != sizeof(*server_answer) ||
+    if (bytes_received != sizeof(*server_answer) ||
         peer_addr.sin_family != AF_INET ||
         peer_addr.sin_addr.s_addr != server_addr->sin_addr.s_addr ||
         peer_addr.sin_port != server_addr->sin_port) {
@@ -183,4 +197,3 @@ static int send_initial_message(int client_fd, const struct sockaddr_in *server_
 
     return EXIT_SUCCESS;
 }
-

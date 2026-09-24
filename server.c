@@ -15,6 +15,7 @@
 void* receive_datagram(void *args);
 void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len);
 void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len);
+void delete_file(char* file_name);
 
 int main() {
     int server_fd;
@@ -61,16 +62,16 @@ void* receive_datagram(void *args) {
 
     while (true) {
         int nbytes = recvfrom(*server_fd, &datagram, sizeof(datagram), 0, (struct sockaddr*)&client_addr, &client_addr_len);
-    
+
         if (nbytes < 0) {
             continue;
         }
-            
+
         if ((size_t)nbytes < sizeof(datagram.header)) {
             fprintf(stderr, "Datagram smaller than header\n");
             continue;
         }
-    
+
         if (datagram.header.message_type == GETINFO) {
             send_file_info(*server_fd, &datagram, &client_addr, client_addr_len);
         } else {
@@ -82,23 +83,25 @@ void* receive_datagram(void *args) {
 void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len) {
     char output_path[PATH_SIZE];
     snprintf(output_path, sizeof(output_path), "%s/%s", OUTPUT_DIR, datagram->header.file_name);
-    
+
     FILE *file_ptr = fopen(output_path, "ab");
     if (file_ptr == NULL) {
         perror("File creation failed");
         return;
     }
-    
+
     size_t data_size = (size_t)nbytes - sizeof(datagram->header);
-    fwrite(datagram->data, 1, data_size, file_ptr);
-    
+    if (get_file_size(output_path) == datagram->header.current_seek) {
+        fwrite(datagram->data, 1, data_size, file_ptr);
+    }
+
     if (fflush(file_ptr)) {
         perror("fflush did no work on server");
         fclose(file_ptr);
         return;
     }
     fclose(file_ptr);
-    
+
     ServerAck ack = {'1'};
     sendto(server_fd, &ack, sizeof(ack), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
 }
@@ -108,7 +111,7 @@ void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *clien
 
     char file_name[PATH_SIZE];
     snprintf(file_name, sizeof(file_name), "%s/%s", OUTPUT_DIR, datagram->header.file_name);
-  
+
     long file_size = get_file_size(file_name);
 
     if (file_size == -1) {
@@ -118,9 +121,8 @@ void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *clien
         server_answer.file_status = INCOMPLETE;
         server_answer.file_offset = file_size;
     } else if (file_size > datagram->header.file_size) {
-        // File is broken (delete it and ask to send it again?)
-        // TO DO: delete file?
-        server_answer.file_status = NOT_EXISTS; 
+        delete_file(file_name);
+        server_answer.file_status = CORRUPTED;
     } else {
         unsigned char *file_hash = hash_file(file_name);
 
@@ -128,13 +130,20 @@ void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *clien
             // File is complete
             server_answer.file_status = COMPLETE;
         } else {
-            // File is broken (delete it and ask to send it again?)
-            // TO DO: delete file?
-            server_answer.file_status = NOT_EXISTS;
+            delete_file(file_name);
+            server_answer.file_status = CORRUPTED;
         }
 
         free(file_hash);
     }
 
     sendto(server_fd, &server_answer, sizeof(server_answer), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
+}
+
+void delete_file(char* file_name) {
+    if (remove(file_name) == 0) {
+        printf("File deleted successfully.\n");
+    } else {
+        printf("Error: Unable to delete the file.\n");
+    }
 }
