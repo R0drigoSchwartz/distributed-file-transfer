@@ -210,11 +210,3 @@ static bool validate_ip_addr(const char *ip_addr) {
     int result = inet_pton(AF_INET, ip_addr, &(sa.sin_addr));
     return result > 0;
 }
-
-
-
-
-
-
-
-

@@ -5,15 +5,17 @@
 #include <openssl/md5.h>
 
 #define PORT 6000
-#define OUTPUT_DIR "resultados"
 #define FILE_NAME_SIZE 256
-#define PATH_SIZE (sizeof(OUTPUT_DIR) + FILE_NAME_SIZE + 1)
 #define DATAGRAM_SIZE (32 * 1024)
 #define BUFFER_SIZE (DATAGRAM_SIZE - sizeof(DatagramHeader))
 #define HASH_SIZE MD5_DIGEST_LENGTH
 #define THREAD_COUNT 10
 #define SOCKETERROR (-1)
 
+typedef struct {
+    int server_fd;
+    const char *dir;
+} ThreadArgs;
 
 typedef enum {
     GETINFO,
