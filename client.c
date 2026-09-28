@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <netinet/in.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -29,8 +31,14 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    char *file_name = argv[2];
-    FILE *file_ptr = fopen(file_name, "rb");
+    const char *file_name = basename(argv[2]);
+    if (strcmp(file_name, "") == 0) {
+        fprintf(stderr, "File path is not valid.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    char *file_path = argv[2];
+    FILE *file_ptr = fopen(file_path, "rb");
     if (file_ptr == NULL) {
         perror("File open failed");;
         exit(EXIT_FAILURE);
@@ -52,8 +60,8 @@ int main(int argc, char *argv[]) {
     timeout.tv_usec = 0;
     setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
-    long file_size = get_file_size(file_name);
-    unsigned char *file_hash = hash_file(file_name);
+    long file_size = get_file_size(file_path);
+    unsigned char *file_hash = hash_file(file_path);
     if (file_size < 0 || file_hash == NULL) {
         fprintf(stderr, "Failed to read file info\n");
         close(client_fd);
