@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -14,14 +15,20 @@
 
 static int send_file(int, const struct sockaddr_in *, FILE *, Datagram *);
 static int send_initial_message(int client_fd, const struct sockaddr_in *server_addr, Datagram *datagram, ServerAnswer *server_answe);
+static bool validate_ip_addr(const char *ip_addr);
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "You should provide the file path.\n");
+    if (argc != 3) {
+        fprintf(stderr, "You should provide server IP addr and the file path.\n");
         exit(EXIT_FAILURE);
     }
 
-    char *file_name = argv[1];
+    if (!validate_ip_addr(argv[1])) {
+        fprintf(stderr, "You should provide a valid server IP addr.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    char *file_name = argv[2];
     FILE *file_ptr = fopen(file_name, "rb");
     if (file_ptr == NULL) {
         perror("File open failed");;
@@ -30,7 +37,7 @@ int main(int argc, char *argv[]) {
 
     // Configure server address
     struct sockaddr_in server_addr = {0};
-    configure_sockaddr(&server_addr, inet_addr("127.0.0.1"), PORT);
+    configure_sockaddr(&server_addr, inet_addr(argv[1]), PORT);
 
     int client_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (client_fd < 0) {
@@ -197,3 +204,17 @@ static int send_initial_message(int client_fd, const struct sockaddr_in *server_
 
     return EXIT_SUCCESS;
 }
+
+static bool validate_ip_addr(const char *ip_addr) {
+    struct sockaddr_in sa;
+    int result = inet_pton(AF_INET, ip_addr, &(sa.sin_addr));
+    return result > 0;
+}
+
+
+
+
+
+
+
+

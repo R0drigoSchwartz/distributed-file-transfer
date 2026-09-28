@@ -102,6 +102,7 @@ void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr
     }
     fclose(file_ptr);
 
+    // TODO: is sufficient an ACK like this? Return the current_seek?
     ServerAck ack = {'1'};
     sendto(server_fd, &ack, sizeof(ack), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
 }
