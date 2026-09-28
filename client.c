@@ -20,6 +20,7 @@ static bool validate_ip_addr(const char *ip_addr);
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         fprintf(stderr, "You should provide server IP addr and the file path.\n");
+        fprintf(stderr, "Use: %s <ip_addr> <file_path>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 

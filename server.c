@@ -18,6 +18,7 @@ void* receive_datagram(void *args);
 void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
 void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
 void delete_file(char* file_name);
+bool validate_dir(const char *dir);
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
@@ -33,22 +34,8 @@ int main(int argc, char *argv[]) {
     }
 
     const char *dir = argv[2];
-    if (mkdir(dir, 0755) == -1) {
-        if (errno != EEXIST) {
-            perror("Failed to create directory");
-            return 1;
-        }
-
-        struct stat info;
-        if (stat(dir, &info) == -1) {
-            perror("Could not access the directory");
-            return 1;
-        }
-
-        if (!S_ISDIR(info.st_mode)) {
-            fprintf(stderr, "The path is not a directory");
-            return 1;
-        }
+    if (!validate_dir(dir)) {
+        exit(EXIT_FAILURE);
     }
     printf("Destination directory: %s\n", dir);
 
@@ -185,4 +172,26 @@ void delete_file(char* file_name) {
     } else {
         printf("Error: Unable to delete the file.\n");
     }
+}
+
+bool validate_dir(const char *dir) {
+    if (mkdir(dir, 0755) == -1) {
+        if (errno != EEXIST) {
+            perror("Failed to create directory");
+            return false;
+        }
+
+        struct stat info;
+        if (stat(dir, &info) == -1) {
+            perror("Could not access the directory");
+            return false;
+        }
+
+        if (!S_ISDIR(info.st_mode)) {
+            fprintf(stderr, "The path is not a directory");
+            return false;
+        }
+    }
+
+    return true;
 }
