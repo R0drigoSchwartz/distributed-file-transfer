@@ -22,24 +22,19 @@ void delete_file(char* file_name);
 bool validate_dir(const char *dir);
 int validate_port(const char *port);
 bool str_is_numeric(const char *number);
+int validate_args(int argc, char *argv[], int *port, const char **dir);
+
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "You should provide server PORT and the folder path.\n");
-        fprintf(stderr, "Use: %s <port> <directory>\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
+    int port = -1;
+    const char *dir = NULL;
 
-    int port = validate_port(argv[1]);
-    if (port < 0) {
-        fprintf(stderr, "You should provide a valid PORT\n");
+    int arg_valid = validate_args(argc, argv, &port, &dir);
+    if (arg_valid != 1) {
         return EXIT_FAILURE;
     }
 
-    const char *dir = argv[2];
-    if (!validate_dir(dir)) {
-        exit(EXIT_FAILURE);
-    }
+    printf("listening in port: %d\n", port);
     printf("Destination directory: %s\n", dir);
 
     int server_fd;
@@ -199,7 +194,6 @@ bool validate_dir(const char *dir) {
     return true;
 }
 
-
 bool str_is_numeric(const char *number) {
     while (*number) {
         if (isdigit(*number++) == 0) return false;
@@ -218,4 +212,42 @@ int validate_port(const char *ptr_port) {
         return -1;
     }
     return port;
+}
+
+int validate_args(int argc, char *argv[], int *port, const char **dir) {
+    if (argc > 3) {
+        fprintf(stderr,
+                "Use: %s [port | directory] or %s port directory\n",
+                argv[0], argv[0]);
+        return -1;
+    }
+
+    *port = DEFAULT_PORT;
+    *dir = DEFAULT_DIR;
+    const char *port_arg = NULL;
+
+    if (argc == 2) {
+        if (argv[1][0] != '\0' && str_is_numeric(argv[1])) {
+            port_arg = argv[1];
+        } else {
+            *dir = argv[1];
+        }
+    } else if (argc == 3) {
+        port_arg = argv[1];
+        *dir = argv[2];
+    }
+
+    if (port_arg != NULL) {
+        *port = validate_port(port_arg);
+        if (*port < 0) {
+            fprintf(stderr, "You should provide a valid PORT: %s\n", port_arg);
+            return -1;
+        }
+    }
+
+    if (!validate_dir(*dir)) {
+        return -1;
+    }
+
+    return 1;
 }

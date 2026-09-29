@@ -4,7 +4,8 @@
 #include <stddef.h>
 #include <openssl/md5.h>
 
-#define PORT 6000
+#define DEFAULT_PORT 6000
+#define DEFAULT_DIR "results"
 #define FILE_NAME_SIZE 256
 #define DATAGRAM_SIZE (32 * 1024)
 #define BUFFER_SIZE (DATAGRAM_SIZE - sizeof(DatagramHeader))

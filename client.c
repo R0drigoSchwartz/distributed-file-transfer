@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
 
     // Configure server address
     struct sockaddr_in server_addr = {0};
-    configure_sockaddr(&server_addr, inet_addr(argv[1]), PORT);
+    configure_sockaddr(&server_addr, inet_addr(argv[1]), DEFAULT_PORT);
 
     int client_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (client_fd < 0) {
