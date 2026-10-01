@@ -59,5 +59,15 @@ dkms.conf
 # debug information files
 *.dwo
 
-/resultados
-file_status.txt
+/results
+status_file.txt
+
+.venv
+venv
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
