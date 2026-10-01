@@ -27,6 +27,9 @@ void write_file_status(Datagram *datagram, const char *local_file);
 long is_file_name_in_file_status(const char *file_name, FILE *file_ptr);
 
 
+pthread_mutex_t file_status_lock = PTHREAD_MUTEX_INITIALIZER;
+
+
 int main(int argc, char *argv[]) {
     int port = -1;
     const char *dir = NULL;
@@ -258,12 +261,14 @@ int validate_args(int argc, char *argv[], int *port, const char **dir) {
 }
 
 void write_file_status(Datagram *datagram, const char *local_file) {
+    pthread_mutex_lock(&file_status_lock);
     FILE *file_ptr = fopen(FILE_STATUS, "r+");
     if (file_ptr == NULL && errno == ENOENT) {
         file_ptr = fopen(FILE_STATUS, "w+");
     }
     if (file_ptr == NULL) {
         perror("Error opening file_status.txt!");
+        pthread_mutex_unlock(&file_status_lock);
         return;
     }
 
@@ -280,6 +285,7 @@ void write_file_status(Datagram *datagram, const char *local_file) {
     fprintf(file_ptr, "%s %s %-8s\n", datagram->header.file_name, hash_hex, file_status);
 
     fclose(file_ptr);
+    pthread_mutex_unlock(&file_status_lock);
 }
 
 long is_file_name_in_file_status(const char *file_name, FILE *file_ptr) {
