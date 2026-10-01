@@ -23,11 +23,11 @@ bool validate_dir(const char *dir);
 int validate_port(const char *port);
 bool str_is_numeric(const char *number);
 int validate_args(int argc, char *argv[], int *port, const char **dir);
-void write_file_status(Datagram *datagram, const char *local_file);
-long is_file_name_in_file_status(const char *file_name, FILE *file_ptr);
+void write_status_file(Datagram *datagram, const char *local_file);
+long is_file_name_in_status_file(const char *file_name, FILE *file_ptr);
 
 
-pthread_mutex_t file_status_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t status_file_lock = PTHREAD_MUTEX_INITIALIZER;
 
 
 int main(int argc, char *argv[]) {
@@ -128,7 +128,7 @@ void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr
         return;
     }
 
-    write_file_status(datagram, output_path);
+    write_status_file(datagram, output_path);
 
     fclose(file_ptr);
 
@@ -260,19 +260,19 @@ int validate_args(int argc, char *argv[], int *port, const char **dir) {
     return 1;
 }
 
-void write_file_status(Datagram *datagram, const char *local_file) {
-    pthread_mutex_lock(&file_status_lock);
-    FILE *file_ptr = fopen(FILE_STATUS, "r+");
+void write_status_file(Datagram *datagram, const char *local_file) {
+    pthread_mutex_lock(&status_file_lock);
+    FILE *file_ptr = fopen(STATUS_FILE, "r+");
     if (file_ptr == NULL && errno == ENOENT) {
-        file_ptr = fopen(FILE_STATUS, "w+");
+        file_ptr = fopen(STATUS_FILE, "w+");
     }
     if (file_ptr == NULL) {
-        perror("Error opening file_status.txt!");
-        pthread_mutex_unlock(&file_status_lock);
+        perror("Error opening status_file.txt!");
+        pthread_mutex_unlock(&status_file_lock);
         return;
     }
 
-    long write_offset = is_file_name_in_file_status(datagram->header.file_name, file_ptr);
+    long write_offset = is_file_name_in_status_file(datagram->header.file_name, file_ptr);
     char hash_hex[HASH_SIZE * 2 + 1]; 
     hash_to_hex(datagram->header.file_hash, hash_hex);
     const char *file_status = "partial";
@@ -285,10 +285,10 @@ void write_file_status(Datagram *datagram, const char *local_file) {
     fprintf(file_ptr, "%s %s %-8s\n", datagram->header.file_name, hash_hex, file_status);
 
     fclose(file_ptr);
-    pthread_mutex_unlock(&file_status_lock);
+    pthread_mutex_unlock(&status_file_lock);
 }
 
-long is_file_name_in_file_status(const char *file_name, FILE *file_ptr) {
+long is_file_name_in_status_file(const char *file_name, FILE *file_ptr) {
     char line[FILE_NAME_SIZE + HASH_SIZE * 2 + 16];
     size_t name_len = strlen(file_name);
     long line_start = 0;
