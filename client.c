@@ -97,16 +97,19 @@ int main(int argc, char *argv[]) {
     int result = EXIT_SUCCESS;
     switch (server_answer.file_status) {
         case NOT_EXISTS:
-            printf("File not exists on the server! \n");
+            printf("File not exists on the server!\n");
             result = send_file(client_fd, &server_addr, file_ptr, datagram);
             break;
         case INCOMPLETE:
-            printf("File isn't complete on the server! \n");
+            printf("File isn't complete on the server!\n");
             fseek(file_ptr, server_answer.file_offset, SEEK_SET);
             result = send_file(client_fd, &server_addr, file_ptr, datagram);
             break;
         case CORRUPTED:
-            printf("File corrupted on the server. It was deleted! \n");
+            printf("File corrupted on the server. It was deleted!\n");
+            break;
+        case INVALID:
+            printf("A file with that name already exists on the server. You must upload your file with a different name!\n");
             break;
         case COMPLETE:
             printf("File is complete on the server! \n");

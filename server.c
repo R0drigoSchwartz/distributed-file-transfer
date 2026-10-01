@@ -25,6 +25,7 @@ bool str_is_numeric(const char *number);
 int validate_args(int argc, char *argv[], int *port, const char **dir);
 void write_status_file(Datagram *datagram, const char *local_file);
 long is_file_name_in_status_file(const char *file_name, FILE *file_ptr);
+bool get_hash_from_status_file(const char *file_name, char *hash_hex);
 
 
 pthread_mutex_t status_file_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -145,10 +146,16 @@ void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *clien
     snprintf(file_name, sizeof(file_name), "%s/%s", dir, datagram->header.file_name);
 
     long file_size = get_file_size(file_name);
+    char file_hash_on_status_file[HASH_SIZE * 2 + 1];
+    bool has_status_hash = get_hash_from_status_file(datagram->header.file_name, file_hash_on_status_file);
+    char file_hash_on_datagram[HASH_SIZE * 2 + 1];
+    hash_to_hex(datagram->header.file_hash, file_hash_on_datagram);
 
     if (file_size == -1) {
         // File doesn't exists!
         server_answer.file_status = NOT_EXISTS;
+    } else if (has_status_hash && strcmp(file_hash_on_status_file, file_hash_on_datagram) != 0) {
+        server_answer.file_status = INVALID;
     } else if (file_size < datagram->header.file_size) {
         server_answer.file_status = INCOMPLETE;
         server_answer.file_offset = file_size;
@@ -304,3 +311,30 @@ long is_file_name_in_status_file(const char *file_name, FILE *file_ptr) {
 
     return line_start;    
 }
+
+bool get_hash_from_status_file(const char *file_name, char *hash_hex) {
+    pthread_mutex_lock(&status_file_lock);
+    FILE *file_ptr = fopen(STATUS_FILE, "r");
+    if (file_ptr == NULL) {
+        pthread_mutex_unlock(&status_file_lock);
+        return false;
+    }
+
+    char line[FILE_NAME_SIZE + HASH_SIZE * 2 + 16];
+    size_t name_len = strlen(file_name);
+    bool found = false;
+
+    while (fgets(line, sizeof(line), file_ptr) != NULL) {
+        if (strncmp(line, file_name, name_len) == 0 && line[name_len] == ' ') {
+            memcpy(hash_hex, line + name_len + 1, HASH_SIZE * 2);
+            hash_hex[HASH_SIZE * 2] = '\0';
+            found = true;
+            break;
+        }
+    }
+
+    fclose(file_ptr);
+    pthread_mutex_unlock(&status_file_lock);
+    return found;
+}
+

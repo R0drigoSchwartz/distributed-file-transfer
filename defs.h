@@ -28,7 +28,8 @@ typedef enum {
     NOT_EXISTS,
     INCOMPLETE,
     COMPLETE,
-    CORRUPTED
+    CORRUPTED,
+    INVALID
 } FileStatus;
 
 typedef struct {
