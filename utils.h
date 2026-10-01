@@ -2,6 +2,7 @@
 #define UTILS_H
 
 #include <arpa/inet.h>
+#include <stdbool.h>
 #include "defs.h"
 
 
@@ -13,6 +14,11 @@ long get_file_size(const char *);
 
 unsigned char* hash_file(const char *);
 
-void hash_to_hex(unsigned char *, char *hash_hex);
+void hash_to_hex(unsigned char *, char *);
+
+bool str_is_numeric(const char *);
+
+int validate_port(const char *);
+
 
 #endif

@@ -1,5 +1,4 @@
 #include <errno.h>
-#include <ctype.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,8 +19,6 @@ void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr
 void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
 void delete_file(char* file_name);
 bool validate_dir(const char *dir);
-int validate_port(const char *port);
-bool str_is_numeric(const char *number);
 int validate_args(int argc, char *argv[], int *port, const char **dir);
 void write_status_file(Datagram *datagram, const char *local_file);
 long is_file_name_in_status_file(const char *file_name, FILE *file_ptr);
@@ -207,26 +204,6 @@ bool validate_dir(const char *dir) {
     }
 
     return true;
-}
-
-bool str_is_numeric(const char *number) {
-    while (*number) {
-        if (isdigit(*number++) == 0) return false;
-    }
-    return true;
-}
-
-int validate_port(const char *ptr_port) {
-    if (!str_is_numeric(ptr_port)) {
-        return -1;
-    }
-
-    int port = atoi(ptr_port);
-
-    if (port < 1024 || port > 65535) {
-        return -1;
-    }
-    return port;
 }
 
 int validate_args(int argc, char *argv[], int *port, const char **dir) {

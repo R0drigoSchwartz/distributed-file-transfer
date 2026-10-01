@@ -6,6 +6,7 @@
 
 #define DEFAULT_PORT 6000
 #define DEFAULT_DIR "results"
+#define DEFAULT_SERVER_ADDR "127.0.0.1"
 #define STATUS_FILE "status_file.txt"
 #define FILE_NAME_SIZE 256
 #define DATAGRAM_SIZE (32 * 1024)

@@ -18,26 +18,19 @@
 static int send_file(int, const struct sockaddr_in *, FILE *, Datagram *);
 static int send_initial_message(int client_fd, const struct sockaddr_in *server_addr, Datagram *datagram, ServerAnswer *server_answe);
 static bool validate_ip_addr(const char *ip_addr);
+static int validate_args(int argc, char *argv[], const char **ip_addr, int *port);
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "You should provide server IP addr and the file path.\n");
-        fprintf(stderr, "Use: %s <ip_addr> <file_path>\n", argv[0]);
-        exit(EXIT_FAILURE);
+    int port = -1;
+    const char *ip_addr = NULL;
+
+    int arg_valid = validate_args(argc, argv, &ip_addr, &port);
+    if (arg_valid != 1) {
+        return EXIT_FAILURE;
     }
 
-    if (!validate_ip_addr(argv[1])) {
-        fprintf(stderr, "You should provide a valid server IP addr.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    const char *file_name = basename(argv[2]);
-    if (strcmp(file_name, "") == 0) {
-        fprintf(stderr, "File path is not valid.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    char *file_path = argv[2];
+    char *file_path = argv[argc - 1];
+    const char *file_name = basename(file_path);
     FILE *file_ptr = fopen(file_path, "rb");
     if (file_ptr == NULL) {
         perror("File open failed");;
@@ -46,7 +39,7 @@ int main(int argc, char *argv[]) {
 
     // Configure server address
     struct sockaddr_in server_addr = {0};
-    configure_sockaddr(&server_addr, inet_addr(argv[1]), DEFAULT_PORT);
+    configure_sockaddr(&server_addr, inet_addr(ip_addr), port);
 
     int client_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (client_fd < 0) {
@@ -221,4 +214,54 @@ static bool validate_ip_addr(const char *ip_addr) {
     struct sockaddr_in sa;
     int result = inet_pton(AF_INET, ip_addr, &(sa.sin_addr));
     return result > 0;
+}
+
+static int validate_args(int argc, char *argv[], const char **ip_addr, int *port) {
+    if (argc < 2 || argc > 4) {
+        fprintf(stderr,
+                "Use: %s [ip_addr | port] file_path or %s ip_addr port file_path \n",
+                argv[0], argv[0]);
+        return -1;
+    }
+
+    *ip_addr = DEFAULT_SERVER_ADDR;
+    *port = DEFAULT_PORT;
+    const char *ip_addr_arg = NULL;
+    const char *port_arg = NULL;
+
+    if (argc == 3) {
+        if (argv[1][0] != '\0' && str_is_numeric(argv[1])) {
+            port_arg = argv[1];
+        } else {
+            ip_addr_arg = argv[1];
+        }
+    } else if (argc == 4) {
+        ip_addr_arg = argv[1];
+        port_arg = argv[2];
+    }
+
+    if (ip_addr_arg != NULL) {
+        if (validate_ip_addr(ip_addr_arg)) {
+            *ip_addr = ip_addr_arg;
+        } else {
+            fprintf(stderr, "You should provide a valid server IP addr.\n");
+            return -1;
+        }
+    }
+
+    if (port_arg != NULL) {
+        *port = validate_port(port_arg);
+        if (*port < 0) {
+            fprintf(stderr, "You should provide a valid PORT: %s\n", port_arg);
+            return -1;
+        }
+    }
+
+    const char *file_name = basename(argv[argc - 1]);
+    if (strcmp(file_name, "") == 0) {
+        fprintf(stderr, "File path is not valid.\n");
+        return -1;
+    }
+
+    return 1;
 }

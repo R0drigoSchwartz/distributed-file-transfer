@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <openssl/evp.h>
 #include <string.h>
+#include <stdbool.h>
+#include <ctype.h>
 #include "utils.h"
 
 
@@ -78,5 +80,24 @@ Datagram* init_datagram(const char *file_name, MessageType message_type, long fi
     return datagram;
 }
 
+bool str_is_numeric(const char *number) {
+    while (*number) {
+        if (isdigit(*number++) == 0) return false;
+    }
+    return true;
+}
+
+int validate_port(const char *ptr_port) {
+    if (!str_is_numeric(ptr_port)) {
+        return -1;
+    }
+
+    int port = atoi(ptr_port);
+
+    if (port < 1024 || port > 65535) {
+        return -1;
+    }
+    return port;
+}
 
 #endif
