@@ -99,7 +99,8 @@ int main(int argc, char *argv[]) {
             result = send_file(client_fd, &server_addr, file_ptr, datagram);
             break;
         case CORRUPTED:
-            printf("File corrupted on the server. It was deleted!\n");
+            printf("File corrupted on the server. It was deleted! Sending again...\n");
+            result = send_file(client_fd, &server_addr, file_ptr, datagram);
             break;
         case INVALID:
             printf("A file with that name already exists on the server. You must upload your file with a different name!\n");
