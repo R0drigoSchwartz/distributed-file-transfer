@@ -2,21 +2,25 @@ CC      = gcc
 CFLAGS  = -Wall -Wextra -g
 LDFLAGS = -pthread -lcrypto
 
-TARGETS = server client
-COMMON  = utils.o
+BUILD_DIR = build
+TARGETS   = $(BUILD_DIR)/server $(BUILD_DIR)/client
+COMMON    = $(BUILD_DIR)/utils.o
 
 all: $(TARGETS)
 
-server: server.o $(COMMON)
+$(BUILD_DIR)/server: $(BUILD_DIR)/server.o $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-client: client.o $(COMMON)
+$(BUILD_DIR)/client: $(BUILD_DIR)/client.o $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-%.o: %.c defs.h utils.h
+$(BUILD_DIR)/%.o: %.c defs.h utils.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILD_DIR):
+	mkdir -p $@
+
 clean:
-	rm -f *.o $(TARGETS)
+	rm -rf $(BUILD_DIR)
 
 .PHONY: all clean
