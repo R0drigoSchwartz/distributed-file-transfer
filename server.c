@@ -14,18 +14,18 @@
 #include "utils.h"
 
 
-void* receive_datagram(void *args);
-void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
-void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
-void delete_file(char* file_name);
-bool validate_dir(const char *dir);
-int validate_args(int argc, char *argv[], int *port, const char **dir);
-void write_status_file(Datagram *datagram, const char *local_file);
-long is_file_name_in_status_file(const char *file_name, FILE *file_ptr);
-bool get_hash_from_status_file(const char *file_name, char *hash_hex);
+static void* receive_datagram(void *args);
+static void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
+static void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
+static void delete_file(char* file_name);
+static bool validate_dir(const char *dir);
+static int validate_args(int argc, char *argv[], int *port, const char **dir);
+static void write_status_file(Datagram *datagram, const char *local_file);
+static long is_file_name_in_status_file(const char *file_name, FILE *file_ptr);
+static bool get_hash_from_status_file(const char *file_name, char *hash_hex);
 
 
-pthread_mutex_t status_file_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t status_file_lock = PTHREAD_MUTEX_INITIALIZER;
 
 
 int main(int argc, char *argv[]) {
@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void* receive_datagram(void *args) {
+static void* receive_datagram(void *args) {
     int server_fd = ((ThreadArgs*) args)->server_fd;
     const char *dir = ((ThreadArgs*) args)->dir;
  
@@ -102,9 +102,11 @@ void* receive_datagram(void *args) {
             receive_file(server_fd, &datagram, nbytes, &client_addr, client_addr_len, dir);
         }
     }
+
+    return NULL;
 }
 
-void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir) {
+static void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir) {
     size_t dir_size = strlen(dir);
     char output_path[dir_size + FILE_NAME_SIZE + 1];
     snprintf(output_path, sizeof(output_path), "%s/%s", dir, datagram->header.file_name);
@@ -135,7 +137,7 @@ void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr
     sendto(server_fd, &ack, sizeof(ack), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
 }
 
-void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir) {
+static void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir) {
     ServerAnswer server_answer = {0};
 
     size_t dir_size = strlen(dir);
@@ -176,7 +178,7 @@ void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *clien
     sendto(server_fd, &server_answer, sizeof(server_answer), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
 }
 
-void delete_file(char* file_name) {
+static void delete_file(char* file_name) {
     if (remove(file_name) == 0) {
         printf("File deleted successfully.\n");
     } else {
@@ -184,7 +186,7 @@ void delete_file(char* file_name) {
     }
 }
 
-bool validate_dir(const char *dir) {
+static bool validate_dir(const char *dir) {
     if (mkdir(dir, 0755) == -1) {
         if (errno != EEXIST) {
             perror("Failed to create directory");
@@ -206,7 +208,7 @@ bool validate_dir(const char *dir) {
     return true;
 }
 
-int validate_args(int argc, char *argv[], int *port, const char **dir) {
+static int validate_args(int argc, char *argv[], int *port, const char **dir) {
     if (argc > 3) {
         fprintf(stderr,
                 "Use: %s [port | directory] or %s port directory\n",
@@ -244,7 +246,7 @@ int validate_args(int argc, char *argv[], int *port, const char **dir) {
     return 1;
 }
 
-void write_status_file(Datagram *datagram, const char *local_file) {
+static void write_status_file(Datagram *datagram, const char *local_file) {
     pthread_mutex_lock(&status_file_lock);
     FILE *file_ptr = fopen(STATUS_FILE, "r+");
     if (file_ptr == NULL && errno == ENOENT) {
@@ -272,7 +274,7 @@ void write_status_file(Datagram *datagram, const char *local_file) {
     pthread_mutex_unlock(&status_file_lock);
 }
 
-long is_file_name_in_status_file(const char *file_name, FILE *file_ptr) {
+static long is_file_name_in_status_file(const char *file_name, FILE *file_ptr) {
     char line[FILE_NAME_SIZE + HASH_SIZE * 2 + 16];
     size_t name_len = strlen(file_name);
     long line_start = 0;
@@ -289,7 +291,7 @@ long is_file_name_in_status_file(const char *file_name, FILE *file_ptr) {
     return line_start;    
 }
 
-bool get_hash_from_status_file(const char *file_name, char *hash_hex) {
+static bool get_hash_from_status_file(const char *file_name, char *hash_hex) {
     pthread_mutex_lock(&status_file_lock);
     FILE *file_ptr = fopen(STATUS_FILE, "r");
     if (file_ptr == NULL) {
