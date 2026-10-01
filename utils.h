@@ -13,4 +13,6 @@ long get_file_size(const char *);
 
 unsigned char* hash_file(const char *);
 
+void hash_to_hex(unsigned char *, char *hash_hex);
+
 #endif

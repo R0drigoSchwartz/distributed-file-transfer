@@ -23,6 +23,8 @@ bool validate_dir(const char *dir);
 int validate_port(const char *port);
 bool str_is_numeric(const char *number);
 int validate_args(int argc, char *argv[], int *port, const char **dir);
+void write_file_status(Datagram *datagram, const char *local_file);
+long is_file_name_in_file_status(const char *file_name, FILE *file_ptr);
 
 
 int main(int argc, char *argv[]) {
@@ -116,12 +118,15 @@ void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr
     if (get_file_size(output_path) == datagram->header.current_seek) {
         fwrite(datagram->data, 1, data_size, file_ptr);
     }
-
+    
     if (fflush(file_ptr)) {
         perror("fflush did no work on server");
         fclose(file_ptr);
         return;
     }
+
+    write_file_status(datagram, output_path);
+
     fclose(file_ptr);
 
     // TODO: is sufficient an ACK like this? Return the current_seek?
@@ -250,4 +255,46 @@ int validate_args(int argc, char *argv[], int *port, const char **dir) {
     }
 
     return 1;
+}
+
+void write_file_status(Datagram *datagram, const char *local_file) {
+    FILE *file_ptr = fopen(FILE_STATUS, "r+");
+    if (file_ptr == NULL && errno == ENOENT) {
+        file_ptr = fopen(FILE_STATUS, "w+");
+    }
+    if (file_ptr == NULL) {
+        perror("Error opening file_status.txt!");
+        return;
+    }
+
+    long write_offset = is_file_name_in_file_status(datagram->header.file_name, file_ptr);
+    char hash_hex[HASH_SIZE * 2 + 1]; 
+    hash_to_hex(datagram->header.file_hash, hash_hex);
+    const char *file_status = "partial";
+
+    if (get_file_size(local_file) == datagram->header.file_size) {
+        file_status = "complete";
+    }
+
+    fseek(file_ptr, write_offset, SEEK_SET);
+    fprintf(file_ptr, "%s %s %-8s\n", datagram->header.file_name, hash_hex, file_status);
+
+    fclose(file_ptr);
+}
+
+long is_file_name_in_file_status(const char *file_name, FILE *file_ptr) {
+    char line[FILE_NAME_SIZE + HASH_SIZE * 2 + 16];
+    size_t name_len = strlen(file_name);
+    long line_start = 0;
+
+    while (fgets(line, sizeof(line), file_ptr) != NULL) {
+        if (strncmp(line, file_name, name_len) == 0 &&
+            (line[name_len] == ' ' || line[name_len] == '\n' || line[name_len] == '\0')) {
+                return line_start;
+            }
+        
+        line_start = ftell(file_ptr);
+    }
+
+    return line_start;    
 }

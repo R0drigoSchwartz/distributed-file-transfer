@@ -51,6 +51,12 @@ unsigned char* hash_file(const char *file_name) {
     return hash;
 }
 
+void hash_to_hex(unsigned char *hash, char *hash_hex) {
+    for (int i = 0; i < HASH_SIZE; i++) {
+        sprintf(hash_hex + i * 2, "%02x", hash[i]);
+    }
+}
+
 void configure_sockaddr(struct sockaddr_in *server_addr, in_addr_t ip, uint16_t port) {
     server_addr->sin_family = AF_INET;
     server_addr->sin_port = htons(port);
