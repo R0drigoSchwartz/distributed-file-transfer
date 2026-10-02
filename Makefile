@@ -3,15 +3,17 @@ CFLAGS  = -Wall -Wextra -g
 LDFLAGS = -pthread -lcrypto
 
 BUILD_DIR = build
-TARGETS   = $(BUILD_DIR)/server $(BUILD_DIR)/client
+VENV_DIR = .venv
+VENV_STAMP = $(VENV_DIR)/.installed
+TARGETS   = server client $(VENV_STAMP)
 COMMON    = $(BUILD_DIR)/utils.o
 
 all: $(TARGETS)
 
-$(BUILD_DIR)/server: $(BUILD_DIR)/server.o $(COMMON)
+server: $(BUILD_DIR)/server.o $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD_DIR)/client: $(BUILD_DIR)/client.o $(COMMON)
+client: $(BUILD_DIR)/client.o $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD_DIR)/%.o: %.c defs.h utils.h | $(BUILD_DIR)
@@ -20,7 +22,12 @@ $(BUILD_DIR)/%.o: %.c defs.h utils.h | $(BUILD_DIR)
 $(BUILD_DIR):
 	mkdir -p $@
 
+$(VENV_STAMP): requirements.txt
+	python3 -m venv $(VENV_DIR)
+	$(VENV_DIR)/bin/pip install -r requirements.txt
+	touch $@
+
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) $(VENV_DIR) server client
 
 .PHONY: all clean

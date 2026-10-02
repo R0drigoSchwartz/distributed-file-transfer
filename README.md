@@ -11,22 +11,20 @@ There is also a web server, written in Python with FastAPI, that shows which fil
 
 ## How to configure the application?
 
-First, set up the environment to run the application. Create a Python virtual environment and install the required dependencies:
-
+First, use make to compile the client and the server, create the virtual environment and install the dependencies:
 ```console
-user@pc: python3 -m venv .venv  # Creates the virtual environment
-user@pc: source .venv/bin/activate  # Activates the virtual environment
-user@pc: pip install -r requirements.txt  # Installs the required dependencies
-```
-
-Next, compile the client and the server with make:
-```console
-user@pc: make all  # Compiles the client and the server code
+user@pc: make all 
 ```
 
 This creates two executables in the project root:
 - server
 - client
+
+After, activate the virtual environment:
+
+```console
+user@pc: source .venv/bin/activate  # Activates the virtual environment
+```
 
 ## How to run the server and the client?
 
