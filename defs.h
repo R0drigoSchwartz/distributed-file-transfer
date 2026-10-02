@@ -1,3 +1,5 @@
+/*Authors: Rodrigo Schwartz (R0drigoSchwartz) and Vinicius Henrique Ribeiro (vini-ribeiro)*/
+
 #ifndef DEFS_H
 #define DEFS_H
 

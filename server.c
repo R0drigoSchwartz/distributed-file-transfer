@@ -1,3 +1,5 @@
+/*Authors: Rodrigo Schwartz (R0drigoSchwartz) and Vinicius Henrique Ribeiro (vini-ribeiro)*/
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
