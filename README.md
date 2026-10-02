@@ -2,12 +2,23 @@
 
 This repository contains the first project for the INE5418 - Distributed Computing course at the Federal University of Santa Catarina (UFSC).
 
-### What does this project do?
+## What does this project do?
 This project is a system for uploading files to a server, which stores them. It follows a client-server architecture: the client sends files directly to the server through a command line executable.
 
 The system was written in C and uses Berkeley Sockets over UDP. Since UDP doesn't guarantee packet delivery, the application uses the Stop-and-Wait protocol to handle lost packets.
 
 There is also a web server, written in Python with FastAPI, that shows which files are available on the server and which are still being transferred.
+
+## Requirements
+- A Unix-like operating system (e.g. Linux or WSL)
+- A C compiler (gcc) and make
+- OpenSSL development headers (libcrypto)
+- Python 3 with the venv module
+
+On Ubuntu/Debian, you can install everything with:
+```console
+user@pc: sudo apt install build-essential libssl-dev python3 python3-venv
+
 
 ## How to configure the application?
 
