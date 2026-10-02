@@ -1,4 +1,5 @@
 # Distributed File Transfer
+Authors: Rodrigo Schwartz (R0drigoSchwartz) and Vinicius Henrique Ribeiro (vini-ribeiro)
 
 This repository contains the first project for the INE5418 - Distributed Computing course at the Federal University of Santa Catarina (UFSC).
 
@@ -18,7 +19,7 @@ There is also a web server, written in Python with FastAPI, that shows which fil
 On Ubuntu/Debian, you can install everything with:
 ```console
 user@pc: sudo apt install build-essential libssl-dev python3 python3-venv
-
+```
 
 ## How to configure the application?
 
