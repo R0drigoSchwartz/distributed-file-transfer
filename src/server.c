@@ -1,0 +1,374 @@
+/*Authors: Rodrigo Schwartz (R0drigoSchwartz) and Vinicius Henrique Ribeiro (vini-ribeiro)*/
+
+#include <errno.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <stdbool.h>
+#include <pthread.h>
+
+#include "defs.h"
+#include "hashmap.h"
+#include "utils.h"
+
+
+static void* receive_datagram(void *args);
+static void receive_file(int server_fd, HashMap *map, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
+static void send_file_info(int server_fd, HashMap *map, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
+static void delete_file(char* file_name);
+static bool validate_dir(const char *dir);
+static int validate_args(int argc, char *argv[], int *port, const char **dir);
+static bool write_status_file(Datagram *datagram, const char *local_file);
+static long is_file_name_in_status_file(const char *file_name, FILE *file_ptr);
+static bool get_hash_from_status_file(const char *file_name, char *hash_hex);
+
+
+// Always acquire the per-file mutex before status_file_lock.
+static pthread_mutex_t status_file_lock = PTHREAD_MUTEX_INITIALIZER;
+
+
+int main(int argc, char *argv[]) {
+    int port = -1;
+    const char *dir = NULL;
+
+    int arg_valid = validate_args(argc, argv, &port, &dir);
+    if (arg_valid != 1) {
+        return EXIT_FAILURE;
+    }
+
+    printf("listening in port: %d\n", port);
+    printf("Destination directory: %s\n", dir);
+
+    int server_fd;
+    struct sockaddr_in server_addr;
+
+    server_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (server_fd < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    configure_sockaddr(&server_addr, INADDR_ANY, port);
+
+    int res = bind(server_fd, (const struct sockaddr*) &server_addr, sizeof(server_addr));
+    if (res < 0) {
+        perror("Bind failed");
+        close(server_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Server is listening on port %d\n", port);
+
+    HashMap *map = hashmap_create();
+    if (map == NULL) {
+        perror("HashMap creation failed");
+        close(server_fd);
+        return EXIT_FAILURE;
+    }
+
+    ThreadArgs thread_arg = {server_fd, dir, map};
+    pthread_t threads[THREAD_COUNT];
+    for (int i = 0; i < THREAD_COUNT; i++) {
+        pthread_create(&threads[i], NULL, receive_datagram, (void*) &thread_arg);
+    }
+
+    for (int i = 0; i < THREAD_COUNT; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    hashmap_destroy(map);
+    close(server_fd);
+    return 0;
+}
+
+static void* receive_datagram(void *args) {
+    int server_fd = ((ThreadArgs*) args)->server_fd;
+    const char *dir = ((ThreadArgs*) args)->dir;
+    HashMap *map = ((ThreadArgs*) args)->map;
+ 
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len;
+
+    Datagram datagram;
+    client_addr_len = sizeof(client_addr);
+
+    while (true) {
+        int nbytes = recvfrom(server_fd, &datagram, sizeof(datagram), 0, (struct sockaddr*)&client_addr, &client_addr_len);
+
+        if (nbytes < 0) {
+            continue;
+        }
+
+        if ((size_t)nbytes < sizeof(datagram.header)) {
+            fprintf(stderr, "Datagram smaller than header\n");
+            continue;
+        }
+
+        if (datagram.header.message_type == GETINFO) {
+            send_file_info(server_fd, map, &datagram, &client_addr, client_addr_len, dir);
+        } else {
+            receive_file(server_fd, map, &datagram, nbytes, &client_addr, client_addr_len, dir);
+        }
+    }
+
+    return NULL;
+}
+
+static void receive_file(int server_fd, HashMap *map, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir) {
+    size_t dir_size = strlen(dir);
+    char output_path[dir_size + FILE_NAME_SIZE + 1];
+    snprintf(output_path, sizeof(output_path), "%s/%s", dir, datagram->header.file_name);
+
+    pthread_mutex_t *mutex;
+    int error = hashmap_get_or_create(map, datagram->header.file_name, &mutex);
+    if (error != 0) {
+        fprintf(stderr, "HashMap: %s\n", strerror(error));
+        return;
+    }
+    error = pthread_mutex_lock(mutex);
+    if (error != 0) {
+        fprintf(stderr, "Mutex: %s\n", strerror(error));
+        hashmap_release(map, datagram->header.file_name, false);
+        return;
+    }
+
+    FILE *file_ptr = fopen(output_path, "ab");
+    if (file_ptr == NULL) {
+        perror("File creation failed");
+        pthread_mutex_unlock(mutex);
+        hashmap_release(map, datagram->header.file_name, false);
+        return;
+    }
+
+    size_t data_size = (size_t)nbytes - sizeof(datagram->header);
+    if (get_file_size(output_path) == datagram->header.current_seek) {
+        fwrite(datagram->data, 1, data_size, file_ptr);
+    }
+    
+    if (fflush(file_ptr)) {
+        perror("fflush did no work on server");
+        fclose(file_ptr);
+        pthread_mutex_unlock(mutex);
+        hashmap_release(map, datagram->header.file_name, false);
+        return;
+    }
+
+    bool complete = write_status_file(datagram, output_path);
+
+    fclose(file_ptr);
+    pthread_mutex_unlock(mutex);
+    error = hashmap_release(map, datagram->header.file_name, complete);
+    if (error != 0) {
+        fprintf(stderr, "HashMap release: %s\n", strerror(error));
+        return;
+    }
+
+    // TODO: is sufficient an ACK like this? Return the current_seek?
+    ServerAck ack = {'1'};
+    sendto(server_fd, &ack, sizeof(ack), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
+}
+
+static void send_file_info(int server_fd, HashMap *map, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir) {
+    ServerAnswer server_answer = {0};
+
+    size_t dir_size = strlen(dir);
+    char file_name[dir_size + FILE_NAME_SIZE + 1];
+    snprintf(file_name, sizeof(file_name), "%s/%s", dir, datagram->header.file_name);
+
+    pthread_mutex_t *mutex;
+    int error = hashmap_get_or_create(map, datagram->header.file_name, &mutex);
+    if (error != 0) {
+        fprintf(stderr, "HashMap: %s\n", strerror(error));
+        return;
+    }
+    error = pthread_mutex_lock(mutex);
+    if (error != 0) {
+        fprintf(stderr, "Mutex: %s\n", strerror(error));
+        hashmap_release(map, datagram->header.file_name, false);
+        return;
+    }
+
+    long file_size = get_file_size(file_name);
+    char file_hash_on_status_file[HASH_SIZE * 2 + 1];
+    bool has_status_hash = get_hash_from_status_file(datagram->header.file_name, file_hash_on_status_file);
+    char file_hash_on_datagram[HASH_SIZE * 2 + 1];
+    hash_to_hex(datagram->header.file_hash, file_hash_on_datagram);
+
+    if (file_size == -1) {
+        // File doesn't exists!
+        server_answer.file_status = NOT_EXISTS;
+    } else if (has_status_hash && strcmp(file_hash_on_status_file, file_hash_on_datagram) != 0) {
+        server_answer.file_status = INVALID;
+    } else if (file_size < datagram->header.file_size) {
+        server_answer.file_status = INCOMPLETE;
+        server_answer.file_offset = file_size;
+    } else if (file_size > datagram->header.file_size) {
+        delete_file(file_name);
+        server_answer.file_status = CORRUPTED;
+    } else {
+        unsigned char *file_hash = hash_file(file_name);
+
+        if (file_hash != NULL && memcmp(file_hash, datagram->header.file_hash, HASH_SIZE) == 0) {
+            // File is complete
+            server_answer.file_status = COMPLETE;
+        } else {
+            delete_file(file_name);
+            server_answer.file_status = CORRUPTED;
+        }
+
+        free(file_hash);
+    }
+    pthread_mutex_unlock(mutex);
+    error = hashmap_release(map, datagram->header.file_name, server_answer.file_status == COMPLETE);
+    if (error != 0) {
+        fprintf(stderr, "HashMap release: %s\n", strerror(error));
+        return;
+    }
+
+    sendto(server_fd, &server_answer, sizeof(server_answer), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
+}
+
+static void delete_file(char* file_name) {
+    if (remove(file_name) == 0) {
+        printf("File deleted successfully.\n");
+    } else {
+        printf("Error: Unable to delete the file.\n");
+    }
+}
+
+static bool validate_dir(const char *dir) {
+    if (mkdir(dir, 0755) == -1) {
+        if (errno != EEXIST) {
+            perror("Failed to create directory");
+            return false;
+        }
+
+        struct stat info;
+        if (stat(dir, &info) == -1) {
+            perror("Could not access the directory");
+            return false;
+        }
+
+        if (!S_ISDIR(info.st_mode)) {
+            fprintf(stderr, "The path is not a directory");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static int validate_args(int argc, char *argv[], int *port, const char **dir) {
+    if (argc > 3) {
+        fprintf(stderr,
+                "Use: %s [port | directory] or %s port directory\n",
+                argv[0], argv[0]);
+        return -1;
+    }
+
+    *port = DEFAULT_PORT;
+    *dir = DEFAULT_DIR;
+    const char *port_arg = NULL;
+
+    if (argc == 2) {
+        if (argv[1][0] != '\0' && str_is_numeric(argv[1])) {
+            port_arg = argv[1];
+        } else {
+            *dir = argv[1];
+        }
+    } else if (argc == 3) {
+        port_arg = argv[1];
+        *dir = argv[2];
+    }
+
+    if (port_arg != NULL) {
+        *port = validate_port(port_arg);
+        if (*port < 0) {
+            fprintf(stderr, "You should provide a valid PORT: %s\n", port_arg);
+            return -1;
+        }
+    }
+
+    if (!validate_dir(*dir)) {
+        return -1;
+    }
+
+    return 1;
+}
+
+static bool write_status_file(Datagram *datagram, const char *local_file) {
+    pthread_mutex_lock(&status_file_lock);
+    FILE *file_ptr = fopen(STATUS_FILE, "r+");
+    if (file_ptr == NULL && errno == ENOENT) {
+        file_ptr = fopen(STATUS_FILE, "w+");
+    }
+    if (file_ptr == NULL) {
+        perror("Error opening status_file.txt!");
+        pthread_mutex_unlock(&status_file_lock);
+        return false;
+    }
+
+    long write_offset = is_file_name_in_status_file(datagram->header.file_name, file_ptr);
+    char hash_hex[HASH_SIZE * 2 + 1]; 
+    hash_to_hex(datagram->header.file_hash, hash_hex);
+    bool complete = get_file_size(local_file) == datagram->header.file_size;
+    const char *file_status = complete ? "complete" : "partial";
+
+    bool recorded = write_offset >= 0 && fseek(file_ptr, write_offset, SEEK_SET) == 0 &&
+        fprintf(file_ptr, "%s %s %-8s\n", datagram->header.file_name, hash_hex, file_status) >= 0;
+
+    if (fclose(file_ptr) != 0) {
+        recorded = false;
+    }
+    pthread_mutex_unlock(&status_file_lock);
+    return complete && recorded;
+}
+
+static long is_file_name_in_status_file(const char *file_name, FILE *file_ptr) {
+    char line[FILE_NAME_SIZE + HASH_SIZE * 2 + 16];
+    size_t name_len = strlen(file_name);
+    long line_start = 0;
+
+    while (fgets(line, sizeof(line), file_ptr) != NULL) {
+        if (strncmp(line, file_name, name_len) == 0 &&
+            (line[name_len] == ' ' || line[name_len] == '\n' || line[name_len] == '\0')) {
+                return line_start;
+            }
+        
+        line_start = ftell(file_ptr);
+    }
+
+    return line_start;    
+}
+
+static bool get_hash_from_status_file(const char *file_name, char *hash_hex) {
+    pthread_mutex_lock(&status_file_lock);
+    FILE *file_ptr = fopen(STATUS_FILE, "r");
+    if (file_ptr == NULL) {
+        pthread_mutex_unlock(&status_file_lock);
+        return false;
+    }
+
+    char line[FILE_NAME_SIZE + HASH_SIZE * 2 + 16];
+    size_t name_len = strlen(file_name);
+    bool found = false;
+
+    while (fgets(line, sizeof(line), file_ptr) != NULL) {
+        if (strncmp(line, file_name, name_len) == 0 && line[name_len] == ' ') {
+            memcpy(hash_hex, line + name_len + 1, HASH_SIZE * 2);
+            hash_hex[HASH_SIZE * 2] = '\0';
+            found = true;
+            break;
+        }
+    }
+
+    fclose(file_ptr);
+    pthread_mutex_unlock(&status_file_lock);
+    return found;
+}
+
