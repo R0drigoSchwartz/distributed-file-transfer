@@ -1,3 +1,5 @@
+/*Authors: Rodrigo Schwartz (R0drigoSchwartz) and Vinicius Henrique Ribeiro (vini-ribeiro)*/
+
 #include "hashmap.h"
 
 #include <errno.h>
@@ -12,6 +14,8 @@ typedef struct HashMapEntry {
     char *key;
     size_t hash;
     pthread_mutex_t mutex;
+    size_t references;
+    bool remove_pending;
     struct HashMapEntry *next;
 } HashMapEntry;
 
@@ -138,6 +142,11 @@ int hashmap_get_or_create(HashMap *map, const char *key, pthread_mutex_t **out) 
     size_t hash = hash_key(key);
     HashMapEntry *entry = find_entry(map, key, hash);
     if (entry != NULL) {
+        if (entry->references == SIZE_MAX) {
+            pthread_mutex_unlock(&map->table_mutex);
+            return EOVERFLOW;
+        }
+        entry->references++;
         *out = &entry->mutex;
         pthread_mutex_unlock(&map->table_mutex);
         return 0;
@@ -157,6 +166,8 @@ int hashmap_get_or_create(HashMap *map, const char *key, pthread_mutex_t **out) 
     }
     memcpy(entry->key, key, key_size);
     entry->hash = hash;
+    entry->references = 1;
+    entry->remove_pending = false;
 
     error = pthread_mutex_init(&entry->mutex, NULL);
     if (error == 0 && map->size >= map->capacity - map->capacity / 4) {
@@ -181,7 +192,7 @@ int hashmap_get_or_create(HashMap *map, const char *key, pthread_mutex_t **out) 
     return 0;
 }
 
-int hashmap_remove(HashMap *map, const char *key) {
+static int release_entry(HashMap *map, const char *key, bool release_reference, bool remove_when_idle) {
     if (map == NULL || key == NULL) {
         return EINVAL;
     }
@@ -195,12 +206,22 @@ int hashmap_remove(HashMap *map, const char *key) {
     while (*link != NULL) {
         HashMapEntry *entry = *link;
         if (entry->hash == hash && strcmp(entry->key, key) == 0) {
-            error = pthread_mutex_destroy(&entry->mutex);
-            if (error == 0) {
-                *link = entry->next;
-                free(entry->key);
-                free(entry);
-                map->size--;
+            if (release_reference) {
+                if (entry->references == 0) {
+                    pthread_mutex_unlock(&map->table_mutex);
+                    return EINVAL;
+                }
+                entry->references--;
+            }
+            entry->remove_pending |= remove_when_idle;
+            if (entry->remove_pending && entry->references == 0) {
+                error = pthread_mutex_destroy(&entry->mutex);
+                if (error == 0) {
+                    *link = entry->next;
+                    free(entry->key);
+                    free(entry);
+                    map->size--;
+                }
             }
             pthread_mutex_unlock(&map->table_mutex);
             return error;
@@ -210,4 +231,12 @@ int hashmap_remove(HashMap *map, const char *key) {
 
     pthread_mutex_unlock(&map->table_mutex);
     return ENOENT;
+}
+
+int hashmap_release(HashMap *map, const char *key, bool complete) {
+    return release_entry(map, key, true, complete);
+}
+
+int hashmap_remove(HashMap *map, const char *key) {
+    return release_entry(map, key, false, true);
 }

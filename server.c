@@ -23,7 +23,7 @@ static void send_file_info(int server_fd, HashMap *map, Datagram* datagram, stru
 static void delete_file(char* file_name);
 static bool validate_dir(const char *dir);
 static int validate_args(int argc, char *argv[], int *port, const char **dir);
-static void write_status_file(Datagram *datagram, const char *local_file);
+static bool write_status_file(Datagram *datagram, const char *local_file);
 static long is_file_name_in_status_file(const char *file_name, FILE *file_ptr);
 static bool get_hash_from_status_file(const char *file_name, char *hash_hex);
 
@@ -133,6 +133,7 @@ static void receive_file(int server_fd, HashMap *map, Datagram* datagram, int nb
     error = pthread_mutex_lock(mutex);
     if (error != 0) {
         fprintf(stderr, "Mutex: %s\n", strerror(error));
+        hashmap_release(map, datagram->header.file_name, false);
         return;
     }
 
@@ -140,6 +141,7 @@ static void receive_file(int server_fd, HashMap *map, Datagram* datagram, int nb
     if (file_ptr == NULL) {
         perror("File creation failed");
         pthread_mutex_unlock(mutex);
+        hashmap_release(map, datagram->header.file_name, false);
         return;
     }
 
@@ -152,13 +154,19 @@ static void receive_file(int server_fd, HashMap *map, Datagram* datagram, int nb
         perror("fflush did no work on server");
         fclose(file_ptr);
         pthread_mutex_unlock(mutex);
+        hashmap_release(map, datagram->header.file_name, false);
         return;
     }
 
-    write_status_file(datagram, output_path);
+    bool complete = write_status_file(datagram, output_path);
 
     fclose(file_ptr);
     pthread_mutex_unlock(mutex);
+    error = hashmap_release(map, datagram->header.file_name, complete);
+    if (error != 0) {
+        fprintf(stderr, "HashMap release: %s\n", strerror(error));
+        return;
+    }
 
     // TODO: is sufficient an ACK like this? Return the current_seek?
     ServerAck ack = {'1'};
@@ -181,6 +189,7 @@ static void send_file_info(int server_fd, HashMap *map, Datagram* datagram, stru
     error = pthread_mutex_lock(mutex);
     if (error != 0) {
         fprintf(stderr, "Mutex: %s\n", strerror(error));
+        hashmap_release(map, datagram->header.file_name, false);
         return;
     }
 
@@ -215,6 +224,11 @@ static void send_file_info(int server_fd, HashMap *map, Datagram* datagram, stru
         free(file_hash);
     }
     pthread_mutex_unlock(mutex);
+    error = hashmap_release(map, datagram->header.file_name, server_answer.file_status == COMPLETE);
+    if (error != 0) {
+        fprintf(stderr, "HashMap release: %s\n", strerror(error));
+        return;
+    }
 
     sendto(server_fd, &server_answer, sizeof(server_answer), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
 }
@@ -287,7 +301,7 @@ static int validate_args(int argc, char *argv[], int *port, const char **dir) {
     return 1;
 }
 
-static void write_status_file(Datagram *datagram, const char *local_file) {
+static bool write_status_file(Datagram *datagram, const char *local_file) {
     pthread_mutex_lock(&status_file_lock);
     FILE *file_ptr = fopen(STATUS_FILE, "r+");
     if (file_ptr == NULL && errno == ENOENT) {
@@ -296,23 +310,23 @@ static void write_status_file(Datagram *datagram, const char *local_file) {
     if (file_ptr == NULL) {
         perror("Error opening status_file.txt!");
         pthread_mutex_unlock(&status_file_lock);
-        return;
+        return false;
     }
 
     long write_offset = is_file_name_in_status_file(datagram->header.file_name, file_ptr);
     char hash_hex[HASH_SIZE * 2 + 1]; 
     hash_to_hex(datagram->header.file_hash, hash_hex);
-    const char *file_status = "partial";
+    bool complete = get_file_size(local_file) == datagram->header.file_size;
+    const char *file_status = complete ? "complete" : "partial";
 
-    if (get_file_size(local_file) == datagram->header.file_size) {
-        file_status = "complete";
+    bool recorded = write_offset >= 0 && fseek(file_ptr, write_offset, SEEK_SET) == 0 &&
+        fprintf(file_ptr, "%s %s %-8s\n", datagram->header.file_name, hash_hex, file_status) >= 0;
+
+    if (fclose(file_ptr) != 0) {
+        recorded = false;
     }
-
-    fseek(file_ptr, write_offset, SEEK_SET);
-    fprintf(file_ptr, "%s %s %-8s\n", datagram->header.file_name, hash_hex, file_status);
-
-    fclose(file_ptr);
     pthread_mutex_unlock(&status_file_lock);
+    return complete && recorded;
 }
 
 static long is_file_name_in_status_file(const char *file_name, FILE *file_ptr) {
