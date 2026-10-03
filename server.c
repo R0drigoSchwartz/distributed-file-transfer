@@ -13,12 +13,13 @@
 #include <pthread.h>
 
 #include "defs.h"
+#include "hashmap.h"
 #include "utils.h"
 
 
 static void* receive_datagram(void *args);
-static void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
-static void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
+static void receive_file(int server_fd, HashMap *map, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
+static void send_file_info(int server_fd, HashMap *map, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir);
 static void delete_file(char* file_name);
 static bool validate_dir(const char *dir);
 static int validate_args(int argc, char *argv[], int *port, const char **dir);
@@ -27,6 +28,7 @@ static long is_file_name_in_status_file(const char *file_name, FILE *file_ptr);
 static bool get_hash_from_status_file(const char *file_name, char *hash_hex);
 
 
+// Always acquire the per-file mutex before status_file_lock.
 static pthread_mutex_t status_file_lock = PTHREAD_MUTEX_INITIALIZER;
 
 
@@ -62,7 +64,14 @@ int main(int argc, char *argv[]) {
 
     printf("Server is listening on port %d\n", port);
 
-    ThreadArgs thread_arg = {server_fd, dir};
+    HashMap *map = hashmap_create();
+    if (map == NULL) {
+        perror("HashMap creation failed");
+        close(server_fd);
+        return EXIT_FAILURE;
+    }
+
+    ThreadArgs thread_arg = {server_fd, dir, map};
     pthread_t threads[THREAD_COUNT];
     for (int i = 0; i < THREAD_COUNT; i++) {
         pthread_create(&threads[i], NULL, receive_datagram, (void*) &thread_arg);
@@ -72,6 +81,7 @@ int main(int argc, char *argv[]) {
         pthread_join(threads[i], NULL);
     }
 
+    hashmap_destroy(map);
     close(server_fd);
     return 0;
 }
@@ -79,6 +89,7 @@ int main(int argc, char *argv[]) {
 static void* receive_datagram(void *args) {
     int server_fd = ((ThreadArgs*) args)->server_fd;
     const char *dir = ((ThreadArgs*) args)->dir;
+    HashMap *map = ((ThreadArgs*) args)->map;
  
     struct sockaddr_in client_addr;
     socklen_t client_addr_len;
@@ -99,23 +110,36 @@ static void* receive_datagram(void *args) {
         }
 
         if (datagram.header.message_type == GETINFO) {
-            send_file_info(server_fd, &datagram, &client_addr, client_addr_len, dir);
+            send_file_info(server_fd, map, &datagram, &client_addr, client_addr_len, dir);
         } else {
-            receive_file(server_fd, &datagram, nbytes, &client_addr, client_addr_len, dir);
+            receive_file(server_fd, map, &datagram, nbytes, &client_addr, client_addr_len, dir);
         }
     }
 
     return NULL;
 }
 
-static void receive_file(int server_fd, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir) {
+static void receive_file(int server_fd, HashMap *map, Datagram* datagram, int nbytes, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir) {
     size_t dir_size = strlen(dir);
     char output_path[dir_size + FILE_NAME_SIZE + 1];
     snprintf(output_path, sizeof(output_path), "%s/%s", dir, datagram->header.file_name);
 
+    pthread_mutex_t *mutex;
+    int error = hashmap_get_or_create(map, datagram->header.file_name, &mutex);
+    if (error != 0) {
+        fprintf(stderr, "HashMap: %s\n", strerror(error));
+        return;
+    }
+    error = pthread_mutex_lock(mutex);
+    if (error != 0) {
+        fprintf(stderr, "Mutex: %s\n", strerror(error));
+        return;
+    }
+
     FILE *file_ptr = fopen(output_path, "ab");
     if (file_ptr == NULL) {
         perror("File creation failed");
+        pthread_mutex_unlock(mutex);
         return;
     }
 
@@ -127,24 +151,38 @@ static void receive_file(int server_fd, Datagram* datagram, int nbytes, struct s
     if (fflush(file_ptr)) {
         perror("fflush did no work on server");
         fclose(file_ptr);
+        pthread_mutex_unlock(mutex);
         return;
     }
 
     write_status_file(datagram, output_path);
 
     fclose(file_ptr);
+    pthread_mutex_unlock(mutex);
 
     // TODO: is sufficient an ACK like this? Return the current_seek?
     ServerAck ack = {'1'};
     sendto(server_fd, &ack, sizeof(ack), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
 }
 
-static void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir) {
+static void send_file_info(int server_fd, HashMap *map, Datagram* datagram, struct sockaddr_in *client_addr, socklen_t client_addr_len, const char *dir) {
     ServerAnswer server_answer = {0};
 
     size_t dir_size = strlen(dir);
     char file_name[dir_size + FILE_NAME_SIZE + 1];
     snprintf(file_name, sizeof(file_name), "%s/%s", dir, datagram->header.file_name);
+
+    pthread_mutex_t *mutex;
+    int error = hashmap_get_or_create(map, datagram->header.file_name, &mutex);
+    if (error != 0) {
+        fprintf(stderr, "HashMap: %s\n", strerror(error));
+        return;
+    }
+    error = pthread_mutex_lock(mutex);
+    if (error != 0) {
+        fprintf(stderr, "Mutex: %s\n", strerror(error));
+        return;
+    }
 
     long file_size = get_file_size(file_name);
     char file_hash_on_status_file[HASH_SIZE * 2 + 1];
@@ -176,6 +214,7 @@ static void send_file_info(int server_fd, Datagram* datagram, struct sockaddr_in
 
         free(file_hash);
     }
+    pthread_mutex_unlock(mutex);
 
     sendto(server_fd, &server_answer, sizeof(server_answer), MSG_CONFIRM, (const struct sockaddr*)client_addr, client_addr_len);
 }

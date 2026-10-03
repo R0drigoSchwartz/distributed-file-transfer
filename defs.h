@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <openssl/md5.h>
 
+#include "hashmap.h"
+
 #define DEFAULT_PORT 6000
 #define DEFAULT_DIR "results"
 #define DEFAULT_SERVER_ADDR "127.0.0.1"
@@ -20,6 +22,7 @@
 typedef struct {
     int server_fd;
     const char *dir;
+    HashMap *map;
 } ThreadArgs;
 
 typedef enum {

@@ -1,5 +1,5 @@
 CC      = gcc
-CFLAGS  = -Wall -Wextra -g
+CFLAGS  = -Wall -Wextra -g -pthread
 LDFLAGS = -pthread -lcrypto
 
 BUILD_DIR = build
@@ -10,13 +10,13 @@ COMMON    = $(BUILD_DIR)/utils.o
 
 all: $(TARGETS)
 
-server: $(BUILD_DIR)/server.o $(COMMON)
+server: $(BUILD_DIR)/server.o $(COMMON) $(BUILD_DIR)/hashmap.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 client: $(BUILD_DIR)/client.o $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD_DIR)/%.o: %.c defs.h utils.h | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: %.c defs.h utils.h hashmap.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR):
