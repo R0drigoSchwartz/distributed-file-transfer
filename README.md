@@ -123,18 +123,5 @@ FastAPI also generates a documentation page automatically, available at `http://
 
 - `src/`: C sources and headers for the client, server, utilities and hashmap.
 - `web/`: FastAPI server and Python requirements.
-- `tests/`: automated integration tests.
-- `scripts/`: the interactive transfer script, run with `./scripts/test.sh <file>`.
 - `build/`: generated object files.
 - `bin/`: generated executables.
-
-`results/` and `status_file.txt` are runtime data, created when needed and ignored by Git. Custom destination paths are still accepted. Build output and Python environments are also ignored.
-
-## How to run the tests?
-
-From the project root:
-
-```sh
-make server client
-python3 tests/test_server_hashmap.py
-```
